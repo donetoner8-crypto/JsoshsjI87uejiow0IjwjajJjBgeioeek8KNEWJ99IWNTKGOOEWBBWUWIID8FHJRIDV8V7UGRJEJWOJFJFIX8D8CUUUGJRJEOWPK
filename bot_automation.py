@@ -42,21 +42,13 @@ async def step_by_step_navigation():
             elif b'get_product|135|1' in buttons_data:
                 print("Вижу товар 135 (Стр 2), перехожу...")
                 await resp.click(data=b'all_products|3')
-                async with client.conversation(bot_username, timeout=10) as conv:
-        while True:
-            # 1. Отправляем /shop
-            await conv.send_message('/shop')
-            resp = await conv.get_response()
+                # Пауза не нужна, так как цикл сразу отправит новый /shop
             
             # Если есть товар 151 -> Переход к 2 (Страница 1)
             elif b'get_product|151|1' in buttons_data:
                 print("Вижу товар 151 (Стр 1), перехожу...")
                 await resp.click(data=b'all_products|2')
-                async with client.conversation(bot_username, timeout=10) as conv:
-        while True:
-            # 1. Отправляем /shop
-            await conv.send_message('/shop')
-            resp = await conv.get_response()
+                # Пауза не нужна, так как цикл сразу отправит новый /shop
                 
             else:
                 print("Цель не найдена на текущей странице.")

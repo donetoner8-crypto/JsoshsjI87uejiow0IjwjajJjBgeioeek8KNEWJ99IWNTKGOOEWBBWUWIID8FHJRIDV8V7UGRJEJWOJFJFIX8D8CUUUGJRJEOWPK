@@ -17,7 +17,7 @@ async def step_by_step_navigation():
     
     async with client.conversation(bot_username, timeout=10) as conv:
         while True:
-            # 1. Отправляем /shop
+            # 1. Принудительная отправка /shop в начале каждой итерации
             await conv.send_message('/shop')
             resp = await conv.get_response()
             
@@ -40,15 +40,17 @@ async def step_by_step_navigation():
             
             # Если есть товар 135 -> Переход к 3 (Страница 2)
             elif b'get_product|135|1' in buttons_data:
-                print("Вижу товар 135 (Стр 2), перехожу...")
+                print("Вижу товар 135 (Стр 2), нажимаю переход...")
                 await resp.click(data=b'all_products|3')
-                # Пауза не нужна, так как цикл сразу отправит новый /shop
+                # После клика цикл вернется в начало и принудительно отправит /shop
+                continue 
             
             # Если есть товар 151 -> Переход к 2 (Страница 1)
             elif b'get_product|151|1' in buttons_data:
-                print("Вижу товар 151 (Стр 1), перехожу...")
+                print("Вижу товар 151 (Стр 1), нажимаю переход...")
                 await resp.click(data=b'all_products|2')
-                # Пауза не нужна, так как цикл сразу отправит новый /shop
+                # После клика цикл вернется в начало и принудительно отправит /shop
+                continue
                 
             else:
                 print("Цель не найдена на текущей странице.")
@@ -56,7 +58,6 @@ async def step_by_step_navigation():
 
 async def main():
     await client.start()
-    # Запуск одного полного цикла навигации
     await step_by_step_navigation()
     await client.disconnect()
 

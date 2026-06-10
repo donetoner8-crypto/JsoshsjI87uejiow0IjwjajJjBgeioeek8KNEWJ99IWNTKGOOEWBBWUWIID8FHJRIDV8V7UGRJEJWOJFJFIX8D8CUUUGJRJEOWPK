@@ -4,7 +4,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Настройки
+# --- НАСТРОЙКИ ---
 api_id = int(os.environ.get('API_ID'))
 api_hash = os.environ.get('API_HASH')
 session_str = os.environ.get('SESSION_STRING')
@@ -12,27 +12,25 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# Универсальная функция нажатия с задержкой 3 секунды
+# --- УНИВЕРСАЛЬНАЯ ФУНКЦИЯ НАЖАТИЯ ---
 async def click_if_exists(message, data_string, delay=3.0):
     for row in message.buttons:
         for button in row:
             if button.data == data_string:
                 print(f"Найдена: {data_string.decode('utf-8')}. Нажимаю...")
                 new_message = await message.click(data=data_string)
-                # Задержка 3 секунды после каждого клика
                 await asyncio.sleep(delay)
                 return new_message
     print(f"Кнопка {data_string.decode('utf-8')} не найдена.")
     return message
 
-# 1. Функция листания (за 2 минуты до закупа)
+# --- ФУНКЦИИ БОТА ---
 async def prepare_shop():
     print("--- Предварительное листание ---")
     try:
         async with client.conversation(bot_username, timeout=45) as conv:
             await conv.send_message('/shop')
             resp = await conv.get_response()
-            # Проходим по цепочке страниц
             resp = await click_if_exists(resp, b'all_products|2')
             resp = await click_if_exists(resp, b'all_products|3')
             resp = await click_if_exists(resp, b'all_products|4')
@@ -40,7 +38,6 @@ async def prepare_shop():
     except Exception as e:
         print(f"Ошибка листания: {e}")
 
-# 2. Функция закупа (ровно в 15:00 и 18:00)
 async def execute_purchase():
     print("--- Выполнение закупа ---")
     try:
@@ -48,7 +45,7 @@ async def execute_purchase():
             await conv.send_message('/shop')
             resp = await conv.get_response()
             
-            # Покупаем
+            # Покупка
             resp = await click_if_exists(resp, b'get_product|119|1')
             resp = await conv.get_response()
             await click_if_exists(resp, b'buy_product|119|')
@@ -56,9 +53,16 @@ async def execute_purchase():
     except Exception as e:
         print(f"Ошибка закупа: {e}")
 
+# --- ОСНОВНОЙ ЦИКЛ ---
 async def main():
     await client.start()
-    print("Бот в режиме ожидания расписания.")
+    print("Бот успешно авторизован.")
+    
+    # ПРОВЕРКА ПРИ СТАРТЕ
+    print("Выполняю первичную проверку системы...")
+    await prepare_shop()
+    await execute_purchase()
+    print("Первичная проверка завершена.")
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
@@ -71,6 +75,7 @@ async def main():
     scheduler.add_job(execute_purchase, 'cron', hour=18, minute=0, second=0)
     
     scheduler.start()
+    print("Планировщик запущен. Ожидаю расписания.")
     await client.run_until_disconnected()
 
 if __name__ == '__main__':

@@ -13,21 +13,21 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
 async def fast_purchase():
-    print("--- ЗАПУСК ЗАКУПА (Задержка 0.67с) ---")
+    print("--- ЗАПУСК ЗАКУПА (Задержка 1.45с) ---")
     try:
-        async with client.conversation(bot_username, timeout=20) as conv:
+        async with client.conversation(bot_username, timeout=30) as conv:
             await conv.send_message('/shop')
             resp = await conv.get_response()
             
-            # --- УВЕРЕННЫЕ КЛИКИ ---
+            # --- СТАБИЛЬНЫЕ КЛИКИ ---
             await resp.click(data=b'all_products|2')
-            await asyncio.sleep(0.67)
+            await asyncio.sleep(1.45)
             
             await resp.click(data=b'all_products|3')
-            await asyncio.sleep(0.67)
+            await asyncio.sleep(1.45)
             
             await resp.click(data=b'get_product|119|1')
-            await asyncio.sleep(0.67)
+            await asyncio.sleep(1.45)
             
             # Финальное подтверждение
             resp2 = await conv.get_response()

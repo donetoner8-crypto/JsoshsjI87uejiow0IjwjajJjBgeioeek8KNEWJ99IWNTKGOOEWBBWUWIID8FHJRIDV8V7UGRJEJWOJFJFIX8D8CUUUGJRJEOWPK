@@ -13,57 +13,73 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# Функция цикла закупа (универсальная)
-async def run_purchase_loop():
-    print(f"--- ЗАПУСК ЦИКЛА ЗАКУПА {datetime.now().strftime('%H:%M:%S')} ---")
-    
-    # 1. Сначала делаем одну попытку (это и есть тот самый "1 цикл")
+async def attempt_purchase():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Попытка закупа...")
     try:
-        async with client.conversation(bot_username, timeout=5) as conv:
+        async with client.conversation(bot_username, timeout=10) as conv:
             await conv.send_message('/shop')
             resp = await conv.get_response()
             
-            # Клик по товару
-            resp = await resp.click(data=b'get_product|119|1')
-            
-            # Подтверждение
-            resp = await conv.get_response()
-            await resp.click(data=b'buy_product|119|')
-            
-            print("Успех: Товар куплен!")
-            return True # Успех
-    except Exception as e:
-        print(f"Проход завершен (ошибка или нет товара): {e}")
-        return False
+            # --- ДИАГНОСТИКА ---
+            if resp.buttons:
+                print("Найдены кнопки:")
+                for row in resp.buttons:
+                    for btn in row:
+                        print(f"  > Текст: {btn.text} | Data: {btn.data}")
+            else:
+                print("!!! В сообщении НЕТ кнопок (или бот прислал текст без них)")
+                return False
+            # --------------------
 
-# Функция для "пулемета" (до 15:01)
-async def start_aggressive_mode(target_hour):
-    print(f"--- РЕЖИМ ПУЛЕМЕТА ВКЛЮЧЕН (до {target_hour}:01) ---")
+            # Попытка клика
+            target_data = b'get_product|119|1'
+            
+            # Ищем кнопку в данных
+            found_btn = None
+            for row in resp.buttons:
+                for btn in row:
+                    if btn.data == target_data:
+                        found_btn = btn
+            
+            if found_btn:
+                await found_btn.click()
+                print("Кнопка товара нажата!")
+                
+                # Подтверждение
+                resp2 = await conv.get_response()
+                # Ищем кнопку buy_product
+                for row in resp2.buttons:
+                    for btn in row:
+                        if b'buy_product' in btn.data:
+                            await btn.click()
+                            print("!!! УСПЕХ: Покупка подтверждена !!!")
+                            return True
+            else:
+                print("Кнопка товара не найдена в текущем меню.")
+                
+    except Exception as e:
+        print(f"Ошибка в цикле: {e}")
+    return False
+
+async def aggressive_mode(target_hour):
+    print(f"--- АГРЕССИВНЫЙ РЕЖИМ (до {target_hour}:01) ---")
     while True:
         now = datetime.now()
-        # Выход, если минута >= 1
         if now.hour == target_hour and now.minute >= 1:
-            print("Время вышло.")
             break
         
-        success = await run_purchase_loop()
-        if success: break # Если купили — прекращаем долбить
+        success = await attempt_purchase()
+        if success: break
+        await asyncio.sleep(0.5) # Минимальная пауза между циклами, чтобы не спамить в Телеграм
 
 async def main():
     await client.start()
-    print("Бот запущен.")
-    
-    # --- ПРОВЕРОЧНЫЙ ЦИКЛ ПРИ СТАРТЕ ---
-    print("Выполняю обязательный цикл проверки при включении...")
-    await run_purchase_loop()
-    print("Проверка завершена. Перехожу в режим ожидания.")
-    # -----------------------------------
+    print("Бот запущен. Тестовый цикл...")
+    await attempt_purchase()
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    
-    # Запуск за 20 секунд до часа
-    scheduler.add_job(start_aggressive_mode, 'cron', hour=14, minute=59, second=40, args=[15])
-    scheduler.add_job(start_aggressive_mode, 'cron', hour=17, minute=59, second=40, args=[18])
+    scheduler.add_job(aggressive_mode, 'cron', hour=14, minute=59, second=40, args=[15])
+    scheduler.add_job(aggressive_mode, 'cron', hour=17, minute=59, second=40, args=[18])
     
     scheduler.start()
     await client.run_until_disconnected()

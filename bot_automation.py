@@ -1,7 +1,7 @@
 import os
 import asyncio
 from datetime import datetime
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -13,92 +13,66 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-async def navigate_and_buy(conv):
-    """Строгая логика: ищем только конкретные пары кнопок"""
-    await conv.send_message('/shop')
-    resp = await conv.get_response()
+# Флаг для пулемета
+is_shooting = False
+
+@client.on(events.NewMessage(from_users=bot_username))
+async def handler(event):
+    # Если кнопок нет, ничего не делаем
+    if not event.buttons:
+        return
     
-    if not resp.buttons:
-        return "no_buttons"
-
-    buttons_data = [b.data for row in resp.buttons for b in row]
+    buttons_data = [b.data for row in event.buttons for b in row]
     
-    # 1. Если есть пара 3 и 4 -> ПОКУПКА
-    if b'all_products|3' in buttons_data and b'all_products|4' in buttons_data:
-        print("Найдена пара [3 и 4] -> Выбираю товар!")
-        resp = await resp.click(data=b'get_product|119|1')
-        resp = await conv.get_response()
-        await resp.click(data=b'buy_product|119|')
-        return "bought"
+    # 1. Покупка (119) - ПРИОРИТЕТ
+    if b'get_product|119|1' in buttons_data:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] НАШЕЛ 119 - ПОКУПАЮ!")
+        await event.click(data=b'get_product|119|1')
+        await asyncio.sleep(0.1)
+        await client.send_message(bot_username, 'buy_product|119|')
+        return
 
-    # 2. Если есть пара 2 и 3 -> Жмем 3
-    if b'all_products|2' in buttons_data and b'all_products|3' in buttons_data:
-        print("Найдена пара [2 и 3] -> Жму 3")
-        await resp.click(data=b'all_products|3')
-        return "navigated"
+    # 2. Навигация со страницы 2 (135 -> 3)
+    if b'get_product|135|1' in buttons_data:
+        print("На странице 2, жму 3")
+        await event.click(data=b'all_products|3')
+        return
 
-    # 3. Если есть пара null и 2 -> Жмем 2
-    has_null = b'null' in buttons_data or None in buttons_data
-    if has_null and b'all_products|2' in buttons_data:
-        print("Найдена пара [null и 2] -> Жму 2")
-        await resp.click(data=b'all_products|2')
-        return "navigated"
+    # 3. Навигация со страницы 1 (151 -> 2)
+    if b'get_product|151|1' in buttons_data:
+        print("На странице 1, жму 2")
+        await event.click(data=b'all_products|2')
+        return
+
+async def start_shooting(target_hour):
+    global is_shooting
+    is_shooting = True
+    print(f"--- ПУЛЕМЕТ РАБОТАЕТ (до {target_hour}:01) ---")
     
-    return "not_found"
-
-async def test_full_cycle():
-    """Прогоняет ВСЮ цепочку при запуске бота"""
-    print("--- ПРОВЕРКА ПРИ ЗАПУСКЕ: ПРОГОН ВСЕЙ ЦЕПОЧКИ ---")
-    step = 0
-    while step < 10: 
-        step += 1
-        try:
-            async with client.conversation(bot_username, timeout=5) as conv:
-                status = await navigate_and_buy(conv)
-                if status == "bought":
-                    print("Тест: Товар успешно куплен!")
-                    break
-                elif status == "navigated":
-                    print("Тест: Переход выполнен, листаю дальше...")
-                    continue 
-                else:
-                    print("Тест: Цепочка завершена/пары не найдены.")
-                    break
-        except Exception as e:
-            print(f"Ошибка в тестовом цикле: {e}")
-            break
-
-async def start_aggressive_mode(target_hour):
-    """Боевой пулемет"""
-    print(f"--- АГРЕССИВНЫЙ РЕЖИМ (Цель: {target_hour}:01) ---")
-    while True:
+    while is_shooting:
         now = datetime.now()
         if now.hour == target_hour and now.minute >= 1:
-            print("Время вышло. Остановка.")
+            is_shooting = False
             break
         
-        try:
-            async with client.conversation(bot_username, timeout=3) as conv:
-                status = await navigate_and_buy(conv)
-                if status == "bought": break
-                elif status == "navigated": continue
-        except Exception:
-            pass
-        await asyncio.sleep(0.1)
+        await client.send_message(bot_username, '/shop')
+        await asyncio.sleep(0.3) 
 
 async def main():
     await client.start()
-    print("Бот запущен.")
     
-    # Сначала проводим полный тест
-    await test_full_cycle()
+    # --- ДОХОДИМ ДО ПОКУПКИ ПРИ ЗАПУСКЕ ---
+    print("Пробую дойти до покупки при запуске...")
+    await client.send_message(bot_username, '/shop')
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    scheduler.add_job(start_aggressive_mode, 'cron', hour=14, minute=59, second=40, args=[15])
-    scheduler.add_job(start_aggressive_mode, 'cron', hour=17, minute=59, second=40, args=[18])
+    scheduler.add_job(start_shooting, 'cron', hour=14, minute=59, second=40, args=[15])
+    scheduler.add_job(start_shooting, 'cron', hour=17, minute=59, second=40, args=[18])
     
     scheduler.start()
+    print("Бот готов. Ожидаю времени закупа...")
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
     asyncio.run(main())
+    

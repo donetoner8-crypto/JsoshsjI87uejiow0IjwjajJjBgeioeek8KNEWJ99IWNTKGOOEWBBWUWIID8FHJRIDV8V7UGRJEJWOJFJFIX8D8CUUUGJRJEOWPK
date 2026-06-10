@@ -1,5 +1,6 @@
 import os
 import asyncio
+from datetime import datetime
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -12,51 +13,45 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# Агрессивная навигация: сброс через /shop и моментальный клик
-async def fast_navigate(conv, data_string):
-    await conv.send_message('/shop')
-    resp = await conv.get_response()
-    await resp.click(data=data_string)
-    print(f"Сброс и переход: {data_string.decode('utf-8')}")
-
-# Основной поток закупа
-async def run_purchase_flow():
-    print("--- ЗАПУСК АГРЕССИВНОГО ЗАКУПА ---")
-    try:
-        async with client.conversation(bot_username, timeout=30) as conv:
-            # 1. Мгновенная навигация без пауз
-            await fast_navigate(conv, b'all_products|2')
-            await fast_navigate(conv, b'all_products|3')
+async def run_precise_purchase(target_hour):
+    print(f"--- АКТИВИРОВАН ВЫСОКОТОЧНЫЙ ЦИКЛ ЗАКУПА (Цель: {target_hour}:00) ---")
+    
+    while True:
+        now = datetime.now()
+        
+        # 1. УСЛОВИЕ ОСТАНОВКИ: Если время > 15:01:00 (для 15 часов)
+        if now.hour == target_hour and now.minute >= 1 and now.second > 0:
+            print("Время вышло, цикл остановлен.")
+            break
             
-            # 2. Переход к покупке
-            await conv.send_message('/shop')
-            resp = await conv.get_response()
-            
-            # Выбор товара (без задержек)
-            resp = await resp.click(data=b'get_product|119|1')
-            
-            # 3. Финальное подтверждение (здесь задержка минимальна для обработки транзакции)
-            resp = await conv.get_response()
-            await resp.click(data=b'buy_product|119|')
-            print("Успех: Товар куплен!")
-            
-    except Exception as e:
-        print(f"Ошибка в процессе: {e}")
+        try:
+            async with client.conversation(bot_username, timeout=3) as conv:
+                # 2. Быстрый сброс и покупка
+                await conv.send_message('/shop')
+                resp = await conv.get_response()
+                
+                resp = await resp.click(data=b'get_product|119|1')
+                
+                resp = await conv.get_response()
+                await resp.click(data=b'buy_product|119|')
+                
+                print(f"Успех в {now.strftime('%H:%M:%S')}!")
+                return # Выходим при успехе
+                
+        except Exception:
+            # Ошибки игнорируем, продолжаем долбить
+            continue
 
 async def main():
     await client.start()
-    print("Бот готов к работе.")
-    
-    # Первичный прогон при старте
-    await run_purchase_flow()
+    print("Бот-пулемет готов к запуску по таймингу.")
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
-    # Расписание (за 2 минуты до закупа и в ровное время)
-    scheduler.add_job(run_purchase_flow, 'cron', hour=14, minute=58)
-    scheduler.add_job(run_purchase_flow, 'cron', hour=15, minute=0)
-    scheduler.add_job(run_purchase_flow, 'cron', hour=17, minute=58)
-    scheduler.add_job(run_purchase_flow, 'cron', hour=18, minute=0)
+    # Запуск за 20 секунд до часа (в 14:59:40)
+    scheduler.add_job(run_precise_purchase, 'cron', hour=14, minute=59, second=40, args=[15])
+    # Запуск за 20 секунд до 18:00 (в 17:59:40)
+    scheduler.add_job(run_precise_purchase, 'cron', hour=17, minute=59, second=40, args=[18])
     
     scheduler.start()
     await client.run_until_disconnected()

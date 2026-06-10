@@ -12,60 +12,61 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-async def manual_click(message, data_string):
-    """Нажимает кнопку и ждет заданное время"""
-    print(f"Нажимаю кнопку: {data_string.decode('utf-8')}")
-    await message.click(data=data_string)
-    await asyncio.sleep(1.5) # Твоя задержка для стабильности
+# Универсальная функция нажатия с задержкой 3 секунды
+async def click_if_exists(message, data_string, delay=3.0):
+    for row in message.buttons:
+        for button in row:
+            if button.data == data_string:
+                print(f"Найдена: {data_string.decode('utf-8')}. Нажимаю...")
+                new_message = await message.click(data=data_string)
+                # Задержка 3 секунды после каждого клика
+                await asyncio.sleep(delay)
+                return new_message
+    print(f"Кнопка {data_string.decode('utf-8')} не найдена.")
+    return message
 
+# 1. Функция листания (за 2 минуты до закупа)
 async def prepare_shop():
-    print("--- Подготовка: листание страниц ---")
+    print("--- Предварительное листание ---")
     try:
-        async with client.conversation(bot_username, timeout=30) as conv:
-            msg = await conv.send_message('/shop')
+        async with client.conversation(bot_username, timeout=45) as conv:
+            await conv.send_message('/shop')
             resp = await conv.get_response()
-            
-            await manual_click(resp, b'all_products|2')
-            # resp обновляется автоматически после получения нового сообщения от бота
-            resp = await conv.get_response() 
-            await manual_click(resp, b'all_products|3')
-            print("Страницы пролистаны.")
+            # Проходим по цепочке страниц
+            resp = await click_if_exists(resp, b'all_products|2')
+            resp = await click_if_exists(resp, b'all_products|3')
+            resp = await click_if_exists(resp, b'all_products|4')
+            print("Страницы успешно пролистаны.")
     except Exception as e:
-        print(f"Ошибка подготовки: {e}")
+        print(f"Ошибка листания: {e}")
 
+# 2. Функция закупа (ровно в 15:00 и 18:00)
 async def execute_purchase():
     print("--- Выполнение закупа ---")
     try:
-        async with client.conversation(bot_username, timeout=30) as conv:
+        async with client.conversation(bot_username, timeout=45) as conv:
             await conv.send_message('/shop')
             resp = await conv.get_response()
             
-            # Покупка товара
-            await manual_click(resp, b'get_product|119|1')
-            
-            # Ждем подтверждения
+            # Покупаем
+            resp = await click_if_exists(resp, b'get_product|119|1')
             resp = await conv.get_response()
-            await manual_click(resp, b'buy_product|119|')
-            
-            print("Закуп успешно завершен!")
+            await click_if_exists(resp, b'buy_product|119|')
+            print("Закуп завершен!")
     except Exception as e:
         print(f"Ошибка закупа: {e}")
 
 async def main():
     await client.start()
-    print("Бот успешно запущен.")
-    
-    # Проверка при старте
-    await prepare_shop()
-    await execute_purchase()
+    print("Бот в режиме ожидания расписания.")
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
-    # Листание за 2 минуты до закупа
+    # Расписание листания
     scheduler.add_job(prepare_shop, 'cron', hour=14, minute=58)
     scheduler.add_job(prepare_shop, 'cron', hour=17, minute=58)
     
-    # Закуп ровно в 15:00 и 18:00
+    # Расписание покупок
     scheduler.add_job(execute_purchase, 'cron', hour=15, minute=0, second=0)
     scheduler.add_job(execute_purchase, 'cron', hour=18, minute=0, second=0)
     

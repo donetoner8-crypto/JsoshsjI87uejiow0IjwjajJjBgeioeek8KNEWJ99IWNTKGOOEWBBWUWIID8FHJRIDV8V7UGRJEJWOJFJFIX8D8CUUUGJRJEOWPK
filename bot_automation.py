@@ -14,8 +14,8 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
 async def navigate_and_buy(conv):
-    """Строгая логика: ищем только конкретные пары кнопок"""
-    # 1. Отправляем /shop
+    """Навигация по ID товаров-якорей на страницах"""
+    # Отправляем /shop
     await conv.send_message('/shop')
     resp = await conv.get_response()
     
@@ -25,25 +25,23 @@ async def navigate_and_buy(conv):
     # Собираем данные всех кнопок
     buttons_data = [b.data for row in resp.buttons for b in row]
     
-    # 4. Если на странице есть ОБЕ кнопки 3 и 4 -> Выбираем товар
-    if b'all_products|3' in buttons_data and b'all_products|4' in buttons_data:
-        print("Найдена пара [3 и 4] -> Выбираю товар!")
+    # 1. ПРОВЕРКА ЦЕЛИ: Если видим наш товар 119 -> МЫ НА МЕСТЕ, ПОКУПАЕМ
+    if b'get_product|119|1' in buttons_data:
+        print("Вижу целевой товар [119] -> Выбираю и покупаю!")
         resp = await resp.click(data=b'get_product|119|1')
         resp = await conv.get_response()
         await resp.click(data=b'buy_product|119|')
         return "bought"
 
-    # 3. Если на странице есть ОБЕ кнопки 2 и 3 -> Жмем 3
-    if b'all_products|2' in buttons_data and b'all_products|3' in buttons_data:
-        print("Найдена пара [2 и 3] -> Жму 3")
+    # 2. ПРОВЕРКА 2 СТРАНИЦЫ: Если видим товар 135 -> МЫ НА СТР 2, ЖМЕМ 3
+    if b'get_product|135|1' in buttons_data:
+        print("Вижу товар [135] (Страница 2) -> Жму all_products|3")
         await resp.click(data=b'all_products|3')
         return "navigated"
 
-    # 2. Если на странице есть ОБЕ кнопки null и 2 -> Жмем 2
-    # Пустая кнопка (например, номер текущей страницы) может быть b'null' или None
-    has_null = b'null' in buttons_data or None in buttons_data
-    if has_null and b'all_products|2' in buttons_data:
-        print("Найдена пара [null и 2] -> Жму 2")
+    # 3. ПРОВЕРКА 1 СТРАНИЦЫ: Если видим товар 151 -> МЫ НА СТР 1, ЖМЕМ 2
+    if b'get_product|151|1' in buttons_data:
+        print("Вижу товар [151] (Страница 1) -> Жму all_products|2")
         await resp.click(data=b'all_products|2')
         return "navigated"
     
@@ -51,7 +49,7 @@ async def navigate_and_buy(conv):
 
 async def test_full_cycle():
     """Прогоняет всю цепочку при запуске бота"""
-    print("--- ПРОВЕРКА ПРИ ЗАПУСКЕ: ПРОГОН ВСЕЙ ЦЕПОЧКИ ---")
+    print("--- ПРОВЕРКА ПРИ ЗАПУСКЕ: ПРОГОН ПО ТОВАРАМ ---")
     step = 0
     while step < 10: # Лимит шагов от зависания
         step += 1
@@ -66,7 +64,7 @@ async def test_full_cycle():
                     print("Тест: Переход выполнен, моментально шлю /shop...")
                     continue # Моментальный рестарт цикла с отправкой /shop
                 else:
-                    print("Тест: Цепочка завершена, нужных пар кнопок нет.")
+                    print("Тест: Цепочка прервалась, нужных товаров-якорей нет на странице.")
                     break
         except Exception as e:
             print(f"Ошибка в тестовом цикле: {e}")
@@ -98,7 +96,7 @@ async def start_aggressive_mode(target_hour):
             # Ошибки связи игнорим, просто пробуем еще раз
             pass
         
-        # Задержка ТОЛЬКО если нужных пар кнопок вообще нет (ждем появления товара)
+        # Задержка ТОЛЬКО если нужных товаров вообще нет (ждем появления)
         await asyncio.sleep(0.1)
 
 async def main():

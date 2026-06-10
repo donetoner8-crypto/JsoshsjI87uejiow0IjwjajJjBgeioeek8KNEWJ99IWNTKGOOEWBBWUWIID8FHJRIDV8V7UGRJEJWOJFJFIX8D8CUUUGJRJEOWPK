@@ -11,69 +11,55 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# Функция для нажатия кнопки и получения ответа
-async def click_button(message, data_string, delay=3.0):
-    print(f"Нажимаю кнопку: {data_string.decode('utf-8')}")
-    new_message = await message.click(data=data_string)
-    await asyncio.sleep(delay)
-    return new_message
-
-# Функция поиска кнопок в сообщении
-def has_button(message, data_string):
-    for row in message.buttons:
-        for button in row:
-            if button.data == data_string:
-                return True
-    return False
-
-# Основная логика выбора
-async def decide_and_act(conv, message):
-    data = [b.data for row in message.buttons for b in row]
+async def fast_shop_navigation(conv):
+    """
+    Листание страниц через жесткий сброс /shop.
+    Без КД, максимально быстро.
+    """
+    print("--- АГРЕССИВНЫЙ СКАНИНГ СТРАНИЦ ---")
     
-    # 1. Если есть all_products|3 и all_products|4 -> ПОКУПАЕМ
-    if b'all_products|3' in data and b'all_products|4' in data:
-        print("Найдена пара 3 и 4: Перехожу к покупке!")
-        msg = await click_button(message, b'get_product|119|1')
-        msg = await conv.get_response()
-        await click_button(msg, b'buy_product|119|')
-        return True # Покупка совершена
+    # Схема переходов: [id страницы, на которую жмем]
+    # Если на странице 1, жмем all_products|2, потом снова /shop и т.д.
+    pages_to_check = [b'all_products|2', b'all_products|3']
     
-    # 2. Если есть кнопки 1 и 3 -> жмем 3
-    elif b'all_products|1' in data and b'all_products|3' in data:
-        print("Найдена пара 1 и 3: Перехожу на 3...")
-        new_msg = await click_button(message, b'all_products|3')
-        return await decide_and_act(conv, new_msg) # Рекурсивно проверяем новую страницу
-        
-    # 3. Если есть только 2 -> жмем 2
-    elif b'all_products|2' in data:
-        print("Найдена 2: Перехожу на 2...")
-        new_msg = await click_button(message, b'all_products|2')
-        return await decide_and_act(conv, new_msg)
-    
-    print("Условия не соблюдены, жду...")
-    return False
+    for page_btn in pages_to_check:
+        await conv.send_message('/shop')
+        resp = await conv.get_response()
+        # Мгновенный клик без ожидания
+        await resp.click(data=page_btn)
+        print(f"Перешли на {page_btn.decode('utf-8')}")
 
-async def run_process():
+async def execute_purchase():
+    print("--- ВЫПОЛНЕНИЕ ЗАКУПА ---")
     try:
-        async with client.conversation(bot_username, timeout=45) as conv:
+        async with client.conversation(bot_username, timeout=30) as conv:
+            # 1. Листаем без КД через /shop
+            await fast_shop_navigation(conv)
+            
+            # 2. Выбираем товар (после этого /shop уже НЕ ДЕЛАЕМ)
             await conv.send_message('/shop')
             resp = await conv.get_response()
-            await decide_and_act(conv, resp)
+            
+            # Покупка
+            resp = await resp.click(data=b'get_product|119|1')
+            
+            # 3. Финальное подтверждение (здесь уже по классике с паузой)
+            resp = await conv.get_response()
+            await resp.click(data=b'buy_product|119|')
+            print("Успешный закуп!")
+            
     except Exception as e:
-        print(f"Ошибка процесса: {e}")
+        print(f"Ошибка: {e}")
 
 async def main():
     await client.start()
     
-    # Авто-проверка при старте
-    await run_process()
-    
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    # Запуск за 2 минуты (подготовка) и в нужное время
-    scheduler.add_job(run_process, 'cron', hour=14, minute=58)
-    scheduler.add_job(run_process, 'cron', hour=15, minute=0)
-    scheduler.add_job(run_process, 'cron', hour=17, minute=58)
-    scheduler.add_job(run_process, 'cron', hour=18, minute=0)
+    # Расписание за 2 минуты и в 15/18
+    scheduler.add_job(execute_purchase, 'cron', hour=14, minute=58)
+    scheduler.add_job(execute_purchase, 'cron', hour=15, minute=0)
+    scheduler.add_job(execute_purchase, 'cron', hour=17, minute=58)
+    scheduler.add_job(execute_purchase, 'cron', hour=18, minute=0)
     
     scheduler.start()
     await client.run_until_disconnected()

@@ -12,33 +12,39 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# 1. Функция подготовки (листаем за 2 минуты до закупа)
+# 1. Функция подготовки: листаем страницы «умно», дожидаясь ответа бота
 async def prepare_shop():
-    print("--- Предварительная подготовка страниц ---")
+    print("--- Подготовка страниц ---")
     try:
         async with client.conversation(bot_username, timeout=20) as conv:
             await conv.send_message('/shop')
-            resp = await conv.get_response()
-            # Кнопки листания
-            await resp.click(data=b'all_products|2')
-            await asyncio.sleep(1.0)
-            await resp.click(data=b'all_products|3')
+            # Ждем ответ на команду
+            resp1 = await conv.get_response()
+            
+            # Листаем страницы, дожидаясь ответа на каждое нажатие
+            await resp1.click(data=b'all_products|2')
+            resp2 = await conv.get_response()
+            
+            await resp2.click(data=b'all_products|3')
             print("Страницы успешно пролистаны!")
     except Exception as e:
         print(f"Ошибка подготовки: {e}")
 
-# 2. Функция покупки (в 15:00:00 и 18:00:00)
+# 2. Функция покупки: берем товар и подтверждаем «умно»
 async def execute_purchase():
     print("--- Выполнение закупа ---")
     try:
         async with client.conversation(bot_username, timeout=20) as conv:
             await conv.send_message('/shop')
-            resp = await conv.get_response()
-            # Покупка
-            await resp.click(data=b'get_product|119|1')
-            await asyncio.sleep(0.5)
+            resp1 = await conv.get_response()
+            
+            # Берем товар
+            await resp1.click(data=b'get_product|119|1')
+            
+            # Ждем подтверждение, чтобы нажать точно в нужное сообщение
             resp2 = await conv.get_response()
             await resp2.click(data=b'buy_product|119|')
+            
             print("Закуп завершен успешно!")
     except Exception as e:
         print(f"Ошибка закупа: {e}")
@@ -55,11 +61,11 @@ async def main():
     # Настройка планировщика
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     
-    # Подготовка за 2 минуты
+    # Подготовка за 2 минуты до закупа
     scheduler.add_job(prepare_shop, 'cron', hour=14, minute=58)
     scheduler.add_job(prepare_shop, 'cron', hour=17, minute=58)
     
-    # Закуп ровно в 15:00 и 18:00
+    # Закуп ровно в 15:00:00 и 18:00:00
     scheduler.add_job(execute_purchase, 'cron', hour=15, minute=0, second=0)
     scheduler.add_job(execute_purchase, 'cron', hour=18, minute=0, second=0)
     

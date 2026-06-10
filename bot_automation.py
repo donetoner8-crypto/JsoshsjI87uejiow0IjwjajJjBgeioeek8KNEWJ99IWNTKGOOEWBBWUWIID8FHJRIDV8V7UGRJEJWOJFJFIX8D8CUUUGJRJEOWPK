@@ -4,7 +4,6 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Настройки
 api_id = int(os.environ.get('API_ID'))
 api_hash = os.environ.get('API_HASH')
 session_str = os.environ.get('SESSION_STRING')
@@ -12,64 +11,69 @@ bot_username = os.environ.get('BOT_USERNAME', 'happygalaxy_bot')
 
 client = TelegramClient(StringSession(session_str), api_id, api_hash)
 
-# Универсальная функция нажатия с задержкой 3с
-async def click_if_exists(message, data_string, delay=3.0):
+# Функция для нажатия кнопки и получения ответа
+async def click_button(message, data_string, delay=3.0):
+    print(f"Нажимаю кнопку: {data_string.decode('utf-8')}")
+    new_message = await message.click(data=data_string)
+    await asyncio.sleep(delay)
+    return new_message
+
+# Функция поиска кнопок в сообщении
+def has_button(message, data_string):
     for row in message.buttons:
         for button in row:
             if button.data == data_string:
-                print(f"Найдена: {data_string.decode('utf-8')}. Нажимаю...")
-                new_message = await message.click(data=data_string)
-                await asyncio.sleep(delay)
-                return new_message, True  # Возвращаем флаг True, что кнопка найдена
-    print(f"Кнопка {data_string.decode('utf-8')} не найдена.")
-    return message, False
+                return True
+    return False
 
-# Функция покупки (вынесена отдельно для использования в обоих случаях)
-async def perform_purchase(conv):
-    print("--- Начинаю процесс покупки ---")
-    await conv.send_message('/shop')
-    resp = await conv.get_response()
+# Основная логика выбора
+async def decide_and_act(conv, message):
+    data = [b.data for row in message.buttons for b in row]
     
-    resp = await click_if_exists(resp, b'get_product|119|1')
-    resp = await conv.get_response()
-    await click_if_exists(resp, b'buy_product|119|')
-    print("Закуп успешно завершен!")
+    # 1. Если есть all_products|3 и all_products|4 -> ПОКУПАЕМ
+    if b'all_products|3' in data and b'all_products|4' in data:
+        print("Найдена пара 3 и 4: Перехожу к покупке!")
+        msg = await click_button(message, b'get_product|119|1')
+        msg = await conv.get_response()
+        await click_button(msg, b'buy_product|119|')
+        return True # Покупка совершена
+    
+    # 2. Если есть кнопки 1 и 3 -> жмем 3
+    elif b'all_products|1' in data and b'all_products|3' in data:
+        print("Найдена пара 1 и 3: Перехожу на 3...")
+        new_msg = await click_button(message, b'all_products|3')
+        return await decide_and_act(conv, new_msg) # Рекурсивно проверяем новую страницу
+        
+    # 3. Если есть только 2 -> жмем 2
+    elif b'all_products|2' in data:
+        print("Найдена 2: Перехожу на 2...")
+        new_msg = await click_button(message, b'all_products|2')
+        return await decide_and_act(conv, new_msg)
+    
+    print("Условия не соблюдены, жду...")
+    return False
 
-# Функция листания с проверкой на 4 страницу
-async def prepare_shop():
-    print("--- Процесс поиска 4 страницы ---")
+async def run_process():
     try:
         async with client.conversation(bot_username, timeout=45) as conv:
             await conv.send_message('/shop')
             resp = await conv.get_response()
-            
-            # Проверяем страницу 2
-            resp, found2 = await click_if_exists(resp, b'all_products|2')
-            
-            # Проверяем страницу 3
-            resp, found3 = await click_if_exists(resp, b'all_products|3')
-            
-            # Проверяем страницу 4 -> ЕСЛИ НАШЛИ, СРАЗУ ПОКУПАЕМ
-            resp, found4 = await click_if_exists(resp, b'all_products|4')
-            if found4:
-                print("Найдена страница 4! Перехожу к покупке.")
-                await perform_purchase(conv)
-                
+            await decide_and_act(conv, resp)
     except Exception as e:
-        print(f"Ошибка в процессе подготовки: {e}")
+        print(f"Ошибка процесса: {e}")
 
 async def main():
     await client.start()
-    print("Бот запущен. Автоматическая проверка...")
     
-    # Первичная проверка
-    await prepare_shop()
+    # Авто-проверка при старте
+    await run_process()
     
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    scheduler.add_job(prepare_shop, 'cron', hour=14, minute=58)
-    scheduler.add_job(prepare_shop, 'cron', hour=17, minute=58)
-    scheduler.add_job(perform_purchase, 'cron', hour=15, minute=0, second=0)
-    scheduler.add_job(perform_purchase, 'cron', hour=18, minute=0, second=0)
+    # Запуск за 2 минуты (подготовка) и в нужное время
+    scheduler.add_job(run_process, 'cron', hour=14, minute=58)
+    scheduler.add_job(run_process, 'cron', hour=15, minute=0)
+    scheduler.add_job(run_process, 'cron', hour=17, minute=58)
+    scheduler.add_job(run_process, 'cron', hour=18, minute=0)
     
     scheduler.start()
     await client.run_until_disconnected()
